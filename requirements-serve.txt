@@ -1,5 +1,10 @@
+anthropic
 fastapi
 uvicorn[standard]==0.50.0
 pandas
 scikit-learn
 mlflow
+confluent-kafka
+chromadb
+skl2onnx
+onnxruntime
