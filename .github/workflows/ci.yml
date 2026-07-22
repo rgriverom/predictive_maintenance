@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  train-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download dataset
+        run: |
+          mkdir -p data
+          curl -L -o data/cmapss.zip "https://phm-datasets.s3.amazonaws.com/NASA/6.+Turbofan+Engine+Degradation+Simulation+Data+Set.zip"
+          unzip -o data/cmapss.zip -d data
+          find data -name "*.zip" ! -name "cmapss.zip" -exec unzip -o {} -d data \;
+          find data -mindepth 2 -name "*.txt" -exec mv -t data {} +
+          find data -mindepth 1 -type d -empty -delete
+          ls data/*.txt
+
+      - name: Train model
+        working-directory: src
+        run: python train_final.py
+
+      - name: Export model
+        working-directory: src
+        run: python export_model.py
+
+      - name: Run model quality tests
+        run: pytest tests/test_model_quality.py -v
+
+      - name: Start API server
+        working-directory: src
+        run: |
+          nohup python serve_model.py &
+          for i in {1..15}; do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 2
+          done
+
+      - name: Run API prediction tests
+        run: pytest tests/test_api_predictions.py -v
+
+      - name: Upload exported model as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-export
+          path: model_export/
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: train-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download exported model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: model-export
+          path: model_export/
+
+      - name: Build Docker image
+        run: docker build -t cmapss-rul-api:ci .

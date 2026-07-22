@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rul-api-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: rul-api
+  ports:
+    - port: 8000
+      targetPort: 8000
